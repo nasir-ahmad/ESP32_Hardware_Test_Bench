@@ -1,3 +1,23 @@
+/*
+ * File: app.cpp
+ * Description: This code demonstrates the use of the MCPWM module on the ESP32 to generate two complementary 
+ *              PWM signals with a 180-degree phase shift. The MCPWM timers are configured to operate at 
+ *              a frequency of 100 kHz with a 50% duty cycle. GPIO 12 (MCPWM0A) and GPIO 13 (MCPWM1A) 
+ *              are used as the PWM output pins.
+ *
+ * Features:
+ * - MCPWM0A outputs a PWM signal on GPIO 12.
+ * - MCPWM1A outputs a PWM signal on GPIO 13 with a 180-degree phase shift relative to MCPWM0A.
+ * - Synchronization is achieved using the mcpwm_sync_enable() function.
+ * 
+ * Configuration:
+ * - PWM Frequency: 100 kHz
+ * - Duty Cycle: 50% (can be adjusted in the configuration)
+ * - Phase Shift: 180 degrees
+ * 
+ * Author: Nasir Ahmad
+ */
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/mcpwm.h"
