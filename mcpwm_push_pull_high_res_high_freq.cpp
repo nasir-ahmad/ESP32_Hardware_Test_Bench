@@ -1,3 +1,27 @@
+/**
+ * @brief Configures MCPWM (Motor Control PWM) for complementary push-pull configuration.
+ *        This implementation uses two PWM channels with complementary outputs and dead-time
+ *        control for applications like H-Bridge or other power electronics circuits.
+ *        The frequency is set to 30 kHz, and the duty cycle will oscillate between 0% and 50%.
+ * 
+ * @details
+ * This code configures two PWM channels (MCPWM0A and MCPWM1A) for a complementary push-pull output.
+ * A 30 kHz PWM frequency is used, and the duty cycle will smoothly transition from 0% to 50% with a delay of 50 ms.
+ * 
+ * The configuration includes:
+ * - PWM frequency set to 30 kHz.
+ * - Dead-time insertion between complementary channels for proper switching.
+ * - Timer synchronization to ensure accurate and synchronized operation between the two PWM channels.
+ * - Smooth duty cycle modulation.
+ * 
+ * @note
+ * Ensure that the microcontroller's GPIO pins are correctly connected to the power stage for your application.
+ * The dead-time value should be adjusted based on your specific switching requirements.
+ * 
+ * 
+ * @author Nasir Ahmad
+ */
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/mcpwm.h"
