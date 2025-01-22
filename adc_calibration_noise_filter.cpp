@@ -33,9 +33,9 @@
 #include "esp_adc_cal.h"
 
 
-#define DEFAULT_VREF 1100  //Use adc2_vref_to_gpio() to obtain a better estimate
+#define DEFAULT_VREF 1100  //Use adc_vref_to_gpio() to obtain a better estimate
 #define NO_OF_SAMPLES 64   //Multisampling
-
+#define VREF_SHADOW_PIN GPIO_NUM_25 //VREF is output to this pin for clibration
 
 static esp_adc_cal_characteristics_t *adc_chars;
 static const adc1_channel_t channel = ADC1_CHANNEL_5;  //GPIO34 if ADC1, GPIO14 if ADC2
@@ -91,6 +91,14 @@ void setup() {
   adc_chars = (esp_adc_cal_characteristics_t *)calloc(1, sizeof(esp_adc_cal_characteristics_t));
   esp_adc_cal_value_t val_type = esp_adc_cal_characterize(unit, atten, ADC_WIDTH_BIT_12, DEFAULT_VREF, adc_chars);
   print_char_val_type(val_type);
+
+
+  esp_err_t status = adc_vref_to_gpio(ADC_UNIT_2, VREF_SHADOW_PIN);
+  if (status == ESP_OK) {
+    Serial.printf("v_ref routed to GPIO\n");
+  } else {
+    Serial.printf("failed to route v_ref\n");
+  }
 }
 
 
