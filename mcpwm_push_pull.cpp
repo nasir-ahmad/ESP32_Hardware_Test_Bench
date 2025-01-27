@@ -22,6 +22,29 @@
  * @author Nasir Ahmad
  */
 
+/**
+ * @brief Example code for configuring and controlling PWM signals using the MCPWM peripheral on ESP32.
+ * 
+ * This example demonstrates how to set up two PWM signals with dead time and a sweeping duty cycle.
+ * The code uses the MCPWM (Motor Control Pulse Width Modulation) module to generate PWM signals
+ * on two GPIO pins. The duty cycle of the PWM signals is swept from 0% to 100% and back in a loop.
+ * 
+ * Key Features:
+ * - Configures MCPWM timer, operator, comparator, and generators.
+ * - Sets up dead time to prevent shoot-through in motor control applications.
+ * - Sweeps the duty cycle of the PWM signals to demonstrate dynamic control.
+ * 
+ * Hardware Setup:
+ * - Connect GPIO_PWM0A and GPIO_PWM0B to the PWM input of your device (e.g., motor driver).
+ * - Replace GPIO_PWM0A and GPIO_PWM0B with the appropriate GPIO pins for your application.
+ * 
+ * Dependencies:
+ * - FreeRTOS for task management.
+ * - ESP-IDF MCPWM driver for PWM configuration.
+ * 
+ * Author: Nasir Ahmad
+ */
+
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -31,9 +54,12 @@
 #define GPIO_PWM0A 12  // Replace with your GPIO for PWM output A
 #define GPIO_PWM0B 13  // Replace with your GPIO for PWM output B
 
-// Global handle for the MCPWM comparator
-static mcpwm_cmpr_handle_t comparator0 = NULL;
-static mcpwm_cmpr_handle_t comparator1 = NULL;
+// Global MCPWM handles
+static mcpwm_timer_handle_t tmrs[2];
+static mcpwm_oper_handle_t oprs[2];
+static mcpwm_cmpr_handle_t cmps[2];
+static mcpwm_gen_handle_t gens[2];
+
 
 /**
  * @brief Setup function for initializing MCPWM components.
@@ -42,6 +68,7 @@ static mcpwm_cmpr_handle_t comparator1 = NULL;
  * It also sets up the dead time for the PWM signals and starts the timer.
  */
 void setup() {
+
   // Configure MCPWM timer
   mcpwm_timer_config_t timer_config = {
     .group_id = 0,
@@ -50,11 +77,9 @@ void setup() {
     .count_mode = MCPWM_TIMER_COUNT_MODE_UP,
     .period_ticks = 800,  // 100 kHz period (10 us / 12.5 ns = 800 ticks)
   };
-  mcpwm_timer_handle_t timer0 = NULL;
-  mcpwm_timer_handle_t timer1 = NULL;
 
-  ESP_ERROR_CHECK(mcpwm_new_timer(&timer_config, &timer0));
-  ESP_ERROR_CHECK(mcpwm_new_timer(&timer_config, &timer1));
+  ESP_ERROR_CHECK(mcpwm_new_timer(&timer_config, &tmrs[0]));
+  ESP_ERROR_CHECK(mcpwm_new_timer(&timer_config, &tmrs[1]));
 
 
   //Create timer sync with TEZ
@@ -62,7 +87,7 @@ void setup() {
   mcpwm_timer_sync_src_config_t timer_sync_config = {
     .timer_event = MCPWM_TIMER_EVENT_EMPTY,
   };
-  ESP_ERROR_CHECK(mcpwm_new_timer_sync_src(timer0, &timer_sync_config, &timer_sync_source));
+  ESP_ERROR_CHECK(mcpwm_new_timer_sync_src(tmrs[0], &timer_sync_config, &timer_sync_source));
 
 
   //Timer sync phase
@@ -71,74 +96,70 @@ void setup() {
     .count_value = 400,
     .direction = MCPWM_TIMER_DIRECTION_UP,
   };
-  ESP_ERROR_CHECK(mcpwm_timer_set_phase_on_sync(timer1, &sync_phase_config));
+  ESP_ERROR_CHECK(mcpwm_timer_set_phase_on_sync(tmrs[1], &sync_phase_config));
 
 
   // Create operator
-  mcpwm_oper_handle_t oper0 = NULL;
-  mcpwm_oper_handle_t oper1 = NULL;
   mcpwm_operator_config_t oper_config = { .group_id = 0 };
-  ESP_ERROR_CHECK(mcpwm_new_operator(&oper_config, &oper0));
-  ESP_ERROR_CHECK(mcpwm_new_operator(&oper_config, &oper1));
+  ESP_ERROR_CHECK(mcpwm_new_operator(&oper_config, &oprs[0]));
+  ESP_ERROR_CHECK(mcpwm_new_operator(&oper_config, &oprs[1]));
 
   // Connect timer to operator
-  ESP_ERROR_CHECK(mcpwm_operator_connect_timer(oper0, timer0));
-  ESP_ERROR_CHECK(mcpwm_operator_connect_timer(oper1, timer1));
+  ESP_ERROR_CHECK(mcpwm_operator_connect_timer(oprs[0], tmrs[0]));
+  ESP_ERROR_CHECK(mcpwm_operator_connect_timer(oprs[1], tmrs[1]));
+
 
   // Create comparator
   mcpwm_comparator_config_t comparator_config = {};
   comparator_config.flags.update_cmp_on_tez = true;
-  ESP_ERROR_CHECK(mcpwm_new_comparator(oper0, &comparator_config, &comparator0));
-  ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator0, 0));
+  ESP_ERROR_CHECK(mcpwm_new_comparator(oprs[0], &comparator_config, &cmps[0]));
+  ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmps[0], 0));
 
-  ESP_ERROR_CHECK(mcpwm_new_comparator(oper1, &comparator_config, &comparator1));
-  ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator1, 0));
+  ESP_ERROR_CHECK(mcpwm_new_comparator(oprs[1], &comparator_config, &cmps[1]));
+  ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmps[1], 0));
 
 
   // Create generators for PWM A and B
-  mcpwm_gen_handle_t gen_a = NULL, gen_b = NULL;
   mcpwm_generator_config_t gen_config = { .gen_gpio_num = GPIO_PWM0A };
-  ESP_ERROR_CHECK(mcpwm_new_generator(oper0, &gen_config, &gen_a));
+  ESP_ERROR_CHECK(mcpwm_new_generator(oprs[0], &gen_config, &gens[0]));
   gen_config.gen_gpio_num = GPIO_PWM0B;
-  ESP_ERROR_CHECK(mcpwm_new_generator(oper1, &gen_config, &gen_b));
+  ESP_ERROR_CHECK(mcpwm_new_generator(oprs[1], &gen_config, &gens[1]));
 
 
   // Configure generator actions
   // PWM A: High on timer start, Low on compare
   // Both generators start with same phase - dead time will invert one
-  ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(gen_a,
+  ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(gens[0],
                                                             MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
-  ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gen_a,
-                                                              MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator0, MCPWM_GEN_ACTION_LOW)));
+  ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gens[0],
+                                                              MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, cmps[0], MCPWM_GEN_ACTION_LOW)));
 
   // Configure gen_b with SAME actions initially
-  ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(gen_b,
+  ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(gens[1],
                                                             MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_LOW)));
-  ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gen_b,
-                                                              MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator1, MCPWM_GEN_ACTION_HIGH)));
+  ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gens[1],
+                                                              MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, cmps[1], MCPWM_GEN_ACTION_HIGH)));
 
 
   // Configure dead time (500 ns = 40 ticks @ 80 MHz)
   mcpwm_dead_time_config_t dead_time_config_a = {
     .posedge_delay_ticks = 30,
-    //.negedge_delay_ticks = 30,
   };
-  ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(gen_a, gen_a, &dead_time_config_a));
+  ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(gens[0], gens[0], &dead_time_config_a));
 
   mcpwm_dead_time_config_t dead_time_config_b = {
-    //.posedge_delay_ticks = 30,
     .negedge_delay_ticks = 30,
   };
   dead_time_config_b.flags.invert_output = true;
-  ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(gen_b, gen_b, &dead_time_config_b));
+  ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(gens[1], gens[1], &dead_time_config_b));
 
 
   // Start timer
-  ESP_ERROR_CHECK(mcpwm_timer_enable(timer0));
-  ESP_ERROR_CHECK(mcpwm_timer_enable(timer1));
+  ESP_ERROR_CHECK(mcpwm_timer_enable(tmrs[0]));
+  ESP_ERROR_CHECK(mcpwm_timer_enable(tmrs[1]));
 
-  ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer0, MCPWM_TIMER_START_NO_STOP));
-  ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer1, MCPWM_TIMER_START_NO_STOP));
+  ESP_ERROR_CHECK(mcpwm_timer_start_stop(tmrs[0], MCPWM_TIMER_START_NO_STOP));
+  ESP_ERROR_CHECK(mcpwm_timer_start_stop(tmrs[1], MCPWM_TIMER_START_NO_STOP));
 }
 
 /**
@@ -158,8 +179,8 @@ void loop(void) {
     else if (duty <= 0) dir = 1;  // Min duty (0%)
 
     int dutyCapped = min(400, max(20, duty));
-    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator0, dutyCapped));
-    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator1, dutyCapped));
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmps[0], dutyCapped));
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmps[1], dutyCapped));
     vTaskDelay(pdMS_TO_TICKS(10));  // Adjust delay to change sweep speed
   }
 }
